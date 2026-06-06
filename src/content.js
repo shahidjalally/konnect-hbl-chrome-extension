@@ -20,14 +20,14 @@
       buttonText: "Electricity Bill",
       title: "Scan an electricity/WAPDA bill barcode with a plug-and-play USB scanner",
       overlayTitle: "Scan Electricity Bill Barcode",
-      helpText: "Use the USB scanner to scan the electricity/WAPDA bill barcode. The extension skips the first character and extracts the next 14 digits.",
+      helpText: "Use the USB scanner to scan the electricity/WAPDA bill barcode. The extension reads the 14 digits immediately after the first alphabet character.",
       successText: "Electricity consumer number filled successfully."
     },
     gas: {
       buttonText: "Gas Bill",
       title: "Scan a gas/SNGPL barcode with a plug-and-play USB scanner",
       overlayTitle: "Scan Gas Bill Barcode",
-      helpText: "Use the USB scanner to scan the gas barcode. The extension skips the first 4 digits and extracts the next 11 digits.",
+      helpText: "Use the USB scanner to scan the gas barcode. The extension reads the 11 digits immediately after the 0300 gas biller prefix.",
       successText: "Gas consumer number filled successfully."
     }
   };
@@ -148,23 +148,18 @@
     removeStaleControlsNearInput(input, wrapper);
 
     const buttonGroups = Array.from(wrapper.querySelectorAll(`.${FIELD_BUTTONS_CLASS}`));
-    let currentButtonCount = 0;
+    let keptButtons = null;
 
-    buttonGroups.forEach((buttons, index) => {
-      const billButtons = buttons.querySelectorAll(`.${BUTTON_CLASS}`).length;
-      const hasOldCameraButton = Boolean(buttons.querySelector(".konnect-camera-scan-button"));
-      const hasOldUsbButton = Boolean(buttons.querySelector(".konnect-usb-scan-button"));
-      const buttonLabels = Array.from(buttons.querySelectorAll(`.${BUTTON_CLASS}`), (button) => button.textContent.trim());
-      const hasCurrentLabels = buttonLabels.includes(BILL_TYPES.electricity.buttonText) && buttonLabels.includes(BILL_TYPES.gas.buttonText);
-      if (index > 0 || hasOldCameraButton || hasOldUsbButton || billButtons !== 2 || !hasCurrentLabels) {
-        buttons.remove();
+    buttonGroups.forEach((buttons) => {
+      if (!keptButtons && isCurrentBillButtonGroup(buttons)) {
+        keptButtons = buttons;
         return;
       }
 
-      currentButtonCount = billButtons;
+      buttons.remove();
     });
 
-    return currentButtonCount;
+    return keptButtons ? keptButtons.querySelectorAll(`.${BUTTON_CLASS}`).length : 0;
   }
 
   function removeStaleControlsNearInput(input, wrapper) {
@@ -174,7 +169,7 @@
     }
 
     Array.from(parent.children).forEach((child) => {
-      if (child === wrapper || child.contains(wrapper) || child.classList?.contains(FIELD_WRAPPER_CLASS)) {
+      if (child === wrapper || child.contains(input)) {
         return;
       }
 
@@ -186,7 +181,21 @@
       child.querySelectorAll?.(
         `.${FIELD_BUTTONS_CLASS}, .konnect-camera-scan-button, .konnect-usb-scan-button, .${BUTTON_CLASS}`
       ).forEach((control) => control.remove());
+
+      if (child.classList?.contains(FIELD_WRAPPER_CLASS) && !child.querySelector("input") && !child.textContent.trim()) {
+        child.remove();
+      }
     });
+  }
+
+  function isCurrentBillButtonGroup(buttons) {
+    const billButtons = buttons.querySelectorAll(`.${BUTTON_CLASS}`).length;
+    const hasOldCameraButton = Boolean(buttons.querySelector(".konnect-camera-scan-button"));
+    const hasOldUsbButton = Boolean(buttons.querySelector(".konnect-usb-scan-button"));
+    const buttonLabels = Array.from(buttons.querySelectorAll(`.${BUTTON_CLASS}`), (button) => button.textContent.trim());
+    const hasCurrentLabels = buttonLabels.includes(BILL_TYPES.electricity.buttonText) && buttonLabels.includes(BILL_TYPES.gas.buttonText);
+
+    return !hasOldCameraButton && !hasOldUsbButton && billButtons === 2 && hasCurrentLabels;
   }
 
   function isScanControlElement(element) {
@@ -508,13 +517,21 @@
 
   function extractElectricityConsumerNumber(rawValue) {
     const value = normalizeBarcodeValue(rawValue);
-    const consumerNumber = value.slice(1, 15);
+    const alphabetIndex = value.search(/[A-Za-z]/);
+    const candidate = alphabetIndex >= 0 ? value.slice(alphabetIndex + 1) : value;
+    const consumerNumber = candidate.replace(/\D/g, "").slice(0, 14);
+
     return /^\d{14}$/.test(consumerNumber) ? consumerNumber : "";
   }
 
   function extractGasConsumerNumber(rawValue) {
     const digits = String(rawValue || "").replace(/\D/g, "");
-    const consumerNumber = digits.slice(4, 15);
+    const prefixIndex = digits.indexOf("0300");
+    if (prefixIndex < 0) {
+      return "";
+    }
+
+    const consumerNumber = digits.slice(prefixIndex + 4, prefixIndex + 15);
     return /^\d{11}$/.test(consumerNumber) ? consumerNumber : "";
   }
 
