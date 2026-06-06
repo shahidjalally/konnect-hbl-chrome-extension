@@ -9,7 +9,7 @@ saveButton.addEventListener("click", saveSettings);
 
 async function loadSettings() {
   const settings = await chrome.storage.sync.get(["licenseKey", "licenseEndpoint", "defaultMobileNumber"]);
-  licenseKeyInput.value = settings.licenseKey || "";
+  licenseKeyInput.value = settings.licenseKey || DEFAULT_LICENSE_KEY;
   licenseEndpointInput.value = settings.licenseEndpoint || DEFAULT_LICENSE_ENDPOINT;
   defaultMobileNumberInput.value = settings.defaultMobileNumber || "";
 }

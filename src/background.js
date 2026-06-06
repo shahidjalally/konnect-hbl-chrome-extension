@@ -33,7 +33,7 @@ async function validateLicense(pageUrl) {
     STORAGE_KEYS.cachedAt
   ]);
 
-  const licenseKey = normalizeLicenseKey(settings[STORAGE_KEYS.licenseKey]);
+  const licenseKey = normalizeLicenseKey(settings[STORAGE_KEYS.licenseKey] || DEFAULT_LICENSE_KEY);
   if (!licenseKey) {
     return {
       valid: false,
@@ -53,18 +53,45 @@ async function validateLicense(pageUrl) {
     }
   }
 
-  const response = await fetch(endpoint, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Unable to fetch license file: HTTP ${response.status}`);
-  }
-
-  const licenseFile = await response.json();
+  const licenseFile = await fetchLicenseFile(endpoint);
   await chrome.storage.sync.set({
     [STORAGE_KEYS.cachedLicense]: licenseFile,
     [STORAGE_KEYS.cachedAt]: Date.now()
   });
 
   return { ...evaluateLicense(licenseFile, licenseKey, pageUrl), source: "remote" };
+}
+
+async function fetchLicenseFile(endpoint) {
+  if (isPlaceholderEndpoint(endpoint)) {
+    return fetchBundledLicenseFile();
+  }
+
+  try {
+    const response = await fetch(endpoint, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    const bundledLicenseFile = await fetchBundledLicenseFile();
+    bundledLicenseFile.fallbackReason = error?.message || String(error);
+    return bundledLicenseFile;
+  }
+}
+
+async function fetchBundledLicenseFile() {
+  const response = await fetch(chrome.runtime.getURL("licenses/licenses.json"));
+  if (!response.ok) {
+    throw new Error(`Unable to fetch bundled license file: HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function isPlaceholderEndpoint(endpoint) {
+  return !endpoint || endpoint.includes("YOUR_GITHUB_USERNAME");
 }
 
 function evaluateLicense(licenseFile, licenseKey, pageUrl) {
