@@ -20,7 +20,7 @@ async function updateInitialStatus() {
     return;
   }
 
-  statusText.textContent = "Ready. Inject controls, then use Electricity or Gas Bill beside a consumer field.";
+  statusText.textContent = "Ready. Inject controls, then use Electricity Bill or Gas Bill beside a consumer field.";
 }
 
 async function runOnCurrentTab(type) {
@@ -41,7 +41,7 @@ async function runOnCurrentTab(type) {
     } else if (type === "KONNECT_QR_START_FIRST_ELECTRICITY_SCAN") {
       statusText.textContent = response?.started === false
         ? response.reason
-        : "Electricity scanner mode is ready on the page. Scan with the USB device now.";
+        : "Electricity Bill scanner mode is ready on the page. Scan with the USB device now.";
     } else {
       statusText.textContent = response?.started === false
         ? response.reason

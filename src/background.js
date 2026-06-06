@@ -5,7 +5,8 @@ const STORAGE_KEYS = {
   licenseEndpoint: "licenseEndpoint",
   cachedLicense: "cachedLicense",
   cachedAt: "cachedLicenseValidatedAt",
-  deviceId: "deviceId"
+  deviceId: "deviceId",
+  defaultMobileNumber: "defaultMobileNumber"
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -25,6 +26,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "GET_DEVICE_ID") {
     getOrCreateDeviceId().then((deviceId) => sendResponse({ deviceId }));
+    return true;
+  }
+
+  if (message?.type === "GET_DEFAULT_MOBILE_NUMBER") {
+    getDefaultMobileNumber().then((defaultMobileNumber) => sendResponse({ defaultMobileNumber }));
     return true;
   }
 
@@ -93,6 +99,17 @@ async function getOrCreateDeviceId() {
 
   await chrome.storage.local.set({ [STORAGE_KEYS.deviceId]: deviceId });
   return deviceId;
+}
+
+async function getDefaultMobileNumber() {
+  const syncSettings = await chrome.storage.sync.get(STORAGE_KEYS.defaultMobileNumber);
+  const syncMobileNumber = String(syncSettings[STORAGE_KEYS.defaultMobileNumber] || "").trim();
+  if (syncMobileNumber) {
+    return syncMobileNumber;
+  }
+
+  const localSettings = await chrome.storage.local.get(STORAGE_KEYS.defaultMobileNumber);
+  return String(localSettings[STORAGE_KEYS.defaultMobileNumber] || "").trim();
 }
 
 async function fetchLicenseFile(endpoint) {

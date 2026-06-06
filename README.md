@@ -2,7 +2,7 @@
 
 This Chrome extension injects exactly two plug-and-play USB barcode scanner buttons beside each Konnect HBL consumer number field:
 
-- **Electricity** for WAPDA/electricity barcodes.
+- **Electricity Bill** for WAPDA/electricity barcodes.
 - **Gas Bill** for SNGPL/gas barcodes.
 
 Supported pages include:
@@ -18,16 +18,16 @@ The single payment target field is detected from common Konnect HBL consumer-num
 
 ## Barcode parsing
 
-- **Electricity / WAPDA**: extracts the 14 digits immediately after the first alphabet character.
+- **Electricity Bill / WAPDA**: skips the very first barcode character and extracts the next 14 digits.
   - Example barcode: `E181564110252121225120126000002303000002511150126`
   - Filled consumer number: `18156411025212`
-- **Gas Bill / SNGPL**: requires the first 4 digits to be the biller prefix `0300`, then extracts the next 11 digits.
+- **Gas Bill / SNGPL**: skips/excludes the first 4 barcode digits and extracts the next 11 digits.
   - Example barcode: `0300047473338490042600000040626000000094000009003`
   - Filled consumer number: `04747333849`
 
 ## Features
 
-- Adds exactly two buttons next to each single or bulk consumer number field: **Electricity** and **Gas Bill**.
+- Adds exactly two buttons next to each single or bulk consumer number field: **Electricity Bill** and **Gas Bill**.
 - Uses plug-and-play USB scanners that behave like keyboards, also called keyboard-wedge scanners.
 - Captures scanner input after the matching button is clicked, then commits on Enter, Tab, or a short idle pause.
 - Extracts the correct consumer number for the selected bill type and fills the selected consumer field.
@@ -80,7 +80,7 @@ To revoke a customer, set that license entry's `enabled` field to `false`, remov
 6. Enter a license key, default depositor mobile number, and the raw GitHub license URL.
 7. Copy the Device ID from options and add it to `allowedDeviceIds` for that license in GitHub.
 8. If a bill payment page was already open, reload it or click the extension toolbar icon and press **Inject scan controls**.
-9. Click **Electricity** or **Gas Bill** beside the target consumer field, keep the page active, and scan the barcode with the USB device.
+9. Click **Electricity Bill** or **Gas Bill** beside the target consumer field, keep the page active, and scan the barcode with the USB device.
 
 ## USB scanner requirements
 

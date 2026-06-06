@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Konnect HBL Consumer QR Scanner",
-  "description": "Injects Electricity and Gas barcode scanner buttons beside Konnect HBL consumer number fields and validates usage by license/device ID.",
+  "description": "Injects Electricity Bill and Gas Bill barcode scanner buttons beside Konnect HBL consumer number fields and validates usage by license/device ID.",
   "version": "1.0.0",
   "permissions": [
     "storage",
