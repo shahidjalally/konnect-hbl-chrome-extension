@@ -11,7 +11,7 @@
       ],
       "message": "Demo license is active only for approved device IDs. Add a browser Device ID to allowedDeviceIds in GitHub to activate.",
       "allowedDeviceIds": [
-        "REPLACE-WITH-APPROVED-DEVICE-ID"
+        "A4774CCF-9463-42D9-905A-E799D4232088"
       ]
     }
   ]
