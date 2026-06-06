@@ -1,25 +1,16 @@
 .konnect-qr-field-wrapper {
-  display: flex !important;
+  display: flex;
   align-items: stretch;
   gap: 8px;
-  flex-wrap: nowrap !important;
 }
 
-.konnect-qr-field-wrapper > input {
+.konnect-qr-field-wrapper #txtconsumernumber {
   flex: 1 1 auto;
-  min-width: 0;
-}
-
-.konnect-qr-field-buttons {
-  display: flex !important;
-  flex: 0 0 auto;
-  gap: 6px;
-  flex-wrap: nowrap !important;
 }
 
 .konnect-qr-scan-button {
   flex: 0 0 auto;
-  padding: 7px 10px;
+  padding: 7px 12px;
   border: 0;
   border-radius: 4px;
   background: #008b7a;
@@ -100,16 +91,4 @@
 
 .konnect-qr-toast-error {
   background: #c92a2a;
-}
-
-.konnect-usb-panel {
-  max-width: 390px;
-}
-
-.konnect-usb-target {
-  padding: 8px;
-  border-radius: 4px;
-  background: #e6fcf5;
-  color: #006f61;
-  font-weight: 700;
 }

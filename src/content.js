@@ -1,526 +1,311 @@
-(() => {
-  const API_NAME = "__konnectHblQrScanner";
+const SINGLE_CONSUMER_SELECTOR = "#txtconsumernumber";
+const BULK_CONSUMER_ID_PATTERN = /^txtConsumer(\d+)$/;
+const SCANNER_CONTAINER_ID = "konnect-qr-scanner-container";
+const BUTTON_CLASS = "konnect-qr-scan-button";
+const FIELD_WRAPPER_CLASS = "konnect-qr-field-wrapper";
+const DEFAULT_MOBILE_STORAGE_KEY = "defaultMobileNumber";
 
-  if (window[API_NAME]) {
-    window[API_NAME].init();
+let mediaStream;
+let activeScan = false;
+
+function init() {
+  injectScanButtons();
+
+  const observer = new MutationObserver(() => injectScanButtons());
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+}
+
+function injectScanButtons() {
+  findConsumerFields().forEach((field) => injectScanButton(field));
+}
+
+function findConsumerFields() {
+  const fields = [];
+  const singleConsumerInput = document.querySelector(SINGLE_CONSUMER_SELECTOR);
+
+  if (singleConsumerInput) {
+    fields.push({ input: singleConsumerInput, mode: "single" });
+  }
+
+  document.querySelectorAll('input[id^="txtConsumer"]').forEach((input) => {
+    const match = input.id.match(BULK_CONSUMER_ID_PATTERN);
+    if (match) {
+      fields.push({ input, mode: "bulk", index: match[1] });
+    }
+  });
+
+  return fields;
+}
+
+function injectScanButton(field) {
+  if (!field.input || field.input.dataset.konnectQrInjected === "true") {
     return;
   }
 
-  const SINGLE_CONSUMER_IDS = ["txtconsumernumber", "txtConsumerNumber", "txtConsumerNo", "txtConsumer"];
-  const BULK_CONSUMER_ID_PATTERN = /^txtConsumer(\d+)$/i;
-  const CONSUMER_LABEL_PATTERN = /consumer\s*(number|no|#)?/i;
-  const SCANNER_CONTAINER_ID = "konnect-qr-scanner-container";
-  const BUTTON_CLASS = "konnect-qr-scan-button";
-  const FIELD_WRAPPER_CLASS = "konnect-qr-field-wrapper";
-  const FIELD_BUTTONS_CLASS = "konnect-qr-field-buttons";
-  const DEFAULT_MOBILE_STORAGE_KEY = "defaultMobileNumber";
-  const SCAN_IDLE_COMMIT_MS = 250;
-  const BILL_TYPES = {
-    electricity: {
-      buttonText: "Electricity",
-      title: "Scan an electricity/WAPDA barcode with a plug-and-play USB scanner",
-      overlayTitle: "Scan Electricity Barcode",
-      helpText: "Use the USB scanner to scan the electricity/WAPDA barcode. The extension extracts the 14 digits after the first alphabet character.",
-      successText: "Electricity consumer number filled successfully."
-    },
-    gas: {
-      buttonText: "Gas Bill",
-      title: "Scan a gas/SNGPL barcode with a plug-and-play USB scanner",
-      overlayTitle: "Scan Gas Bill Barcode",
-      helpText: "Use the USB scanner to scan the gas barcode. The extension skips the 0300 biller prefix and extracts the next 11 digits.",
-      successText: "Gas consumer number filled successfully."
-    }
-  };
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = BUTTON_CLASS;
+  button.textContent = "Scan QR Code";
+  button.addEventListener("click", () => handleScanClick(field));
 
-  let activeScan = false;
-  let observer;
-  let scanState = null;
+  const wrapper = document.createElement("div");
+  wrapper.className = FIELD_WRAPPER_CLASS;
 
-  function init() {
-    injectScanButtons();
+  field.input.dataset.konnectQrInjected = "true";
+  field.input.parentElement.insertBefore(wrapper, field.input);
+  wrapper.append(field.input, button);
+}
 
-    if (!observer) {
-      observer = new MutationObserver(() => injectScanButtons());
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-    }
+async function handleScanClick(field) {
+  if (activeScan) {
+    return;
   }
 
-  function injectScanButtons() {
-    const fields = findConsumerFields();
-    fields.forEach((field) => injectScanControls(field));
-    return fields.length;
+  const license = await requestLicenseValidation();
+  if (!license.valid) {
+    showToast(license.reason || "License is not valid.", "error");
+    return;
   }
 
-  function findConsumerFields() {
-    const fields = [];
-    const seen = new Set();
+  if (!("BarcodeDetector" in window)) {
+    showToast("QR scanner is not available in this Chrome build. Please update Chrome and try again.", "error");
+    return;
+  }
 
-    for (const input of findSingleConsumerInputs()) {
-      addConsumerField(fields, seen, { input, mode: "single" });
-    }
+  const supportedFormats = await BarcodeDetector.getSupportedFormats();
+  if (!supportedFormats.includes("qr_code")) {
+    showToast("QR code detection is not supported in this Chrome build.", "error");
+    return;
+  }
 
-    document.querySelectorAll("input[id]").forEach((input) => {
-      const match = input.id.match(BULK_CONSUMER_ID_PATTERN);
-      if (match) {
-        addConsumerField(fields, seen, { input, mode: "bulk", index: match[1] });
-      }
+  startScanner(field);
+}
+
+function requestLicenseValidation() {
+  return chrome.runtime.sendMessage({ type: "VALIDATE_LICENSE" });
+}
+
+async function startScanner(field) {
+  const input = document.getElementById(field.input.id);
+  if (!input) {
+    showToast("Consumer number field was not found.", "error");
+    return;
+  }
+
+  activeScan = true;
+  const overlay = buildScannerOverlay(field);
+  document.body.appendChild(overlay.container);
+
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
     });
 
-    return fields;
+    overlay.video.srcObject = mediaStream;
+    await overlay.video.play();
+
+    const detector = new BarcodeDetector({ formats: ["qr_code"] });
+    await scanLoop(detector, overlay.video, { ...field, input });
+  } catch (error) {
+    showToast(error?.message || "Unable to start QR scanner.", "error");
+    stopScanner(overlay.container);
+  }
+}
+
+function buildScannerOverlay(field) {
+  const container = document.createElement("div");
+  container.id = SCANNER_CONTAINER_ID;
+  container.className = "konnect-qr-overlay";
+
+  const panel = document.createElement("div");
+  panel.className = "konnect-qr-panel";
+
+  const title = document.createElement("h3");
+  title.textContent = field.mode === "bulk" ? `Scan Consumer Number ${field.index} QR Code` : "Scan Consumer Number QR Code";
+
+  const help = document.createElement("p");
+  help.textContent = "Point your camera at the QR code. The detected consumer number will be inserted automatically.";
+
+  const video = document.createElement("video");
+  video.className = "konnect-qr-video";
+  video.setAttribute("playsinline", "true");
+  video.muted = true;
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "konnect-qr-cancel";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => stopScanner(container));
+
+  panel.append(title, help, video, cancel);
+  container.appendChild(panel);
+
+  return { container, video };
+}
+
+async function scanLoop(detector, video, field) {
+  if (!activeScan) {
+    return;
   }
 
-  function addConsumerField(fields, seen, field) {
-    if (!field.input || seen.has(field.input)) {
-      return;
-    }
-
-    seen.add(field.input);
-    fields.push(field);
+  const overlay = document.getElementById(SCANNER_CONTAINER_ID);
+  if (!overlay) {
+    activeScan = false;
+    return;
   }
 
-  function findSingleConsumerInputs() {
-    const inputs = [];
+  try {
+    const barcodes = await detector.detect(video);
+    const rawValue = barcodes[0]?.rawValue;
 
-    for (const id of SINGLE_CONSUMER_IDS) {
-      const input = document.getElementById(id);
-      if (input) {
-        inputs.push(input);
-      }
-    }
-
-    document.querySelectorAll('input[name*="consumer" i], input[id*="consumer" i]').forEach((input) => {
-      if (!input.id.match(BULK_CONSUMER_ID_PATTERN) && isLikelyConsumerInput(input)) {
-        inputs.push(input);
-      }
-    });
-
-    const labelledInput = findInputByLabelText(CONSUMER_LABEL_PATTERN);
-    if (labelledInput && !labelledInput.id.match(BULK_CONSUMER_ID_PATTERN)) {
-      inputs.push(labelledInput);
-    }
-
-    return inputs;
-  }
-
-  function isLikelyConsumerInput(input) {
-    const identity = `${input.id || ""} ${input.name || ""} ${input.placeholder || ""}`;
-    return CONSUMER_LABEL_PATTERN.test(identity) && !/mobile|phone|depositor|amount|name/i.test(identity);
-  }
-
-  function injectScanControls(field) {
-    if (!field.input || !field.input.parentElement) {
-      return;
-    }
-
-    const currentButtonCount = normalizeExistingControls(field.input);
-
-    if (field.input.dataset.konnectQrInjected === "true") {
-      if (currentButtonCount === 0) {
-        const existingWrapper = field.input.closest(`.${FIELD_WRAPPER_CLASS}`) || field.input.parentElement;
-        existingWrapper.appendChild(buildBillButtons(field));
-      }
-      return;
-    }
-
-    const wrapper = document.createElement("div");
-    wrapper.className = FIELD_WRAPPER_CLASS;
-
-    field.input.dataset.konnectQrInjected = "true";
-    field.input.parentElement.insertBefore(wrapper, field.input);
-    wrapper.append(field.input, buildBillButtons(field));
-  }
-
-  function buildBillButtons(field) {
-    const electricityButton = buildBillButton("electricity", field);
-    const gasButton = buildBillButton("gas", field);
-    const buttons = document.createElement("div");
-    buttons.className = FIELD_BUTTONS_CLASS;
-    buttons.append(electricityButton, gasButton);
-    return buttons;
-  }
-
-  function normalizeExistingControls(input) {
-    const wrapper = input.closest?.(`.${FIELD_WRAPPER_CLASS}`) || input.parentElement;
-    if (!wrapper) {
-      return 0;
-    }
-
-    const buttonGroups = Array.from(wrapper.querySelectorAll(`.${FIELD_BUTTONS_CLASS}`));
-    let currentButtonCount = 0;
-
-    buttonGroups.forEach((buttons, index) => {
-      const billButtons = buttons.querySelectorAll(`.${BUTTON_CLASS}`).length;
-      const hasOldCameraButton = Boolean(buttons.querySelector(".konnect-camera-scan-button"));
-      const hasOldUsbButton = Boolean(buttons.querySelector(".konnect-usb-scan-button"));
-      if (index > 0 || hasOldCameraButton || hasOldUsbButton || billButtons !== 2) {
-        buttons.remove();
+    if (rawValue) {
+      const consumerNumber = extractConsumerNumber(rawValue);
+      if (consumerNumber) {
+        await fillPaymentFields(field, consumerNumber);
+        showToast("Consumer and mobile number filled successfully.", "success");
+        stopScanner(overlay);
         return;
       }
-
-      currentButtonCount = billButtons;
-    });
-
-    return currentButtonCount;
+    }
+  } catch (_error) {
+    // Continue scanning; transient detector failures are common while the video is warming up.
   }
 
-  function buildBillButton(type, field) {
-    const config = BILL_TYPES[type];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `${BUTTON_CLASS} konnect-${type}-scan-button`;
-    button.textContent = config.buttonText;
-    button.title = config.title;
-    button.addEventListener("click", () => handleBillScanClick(field, type));
-    return button;
+  requestAnimationFrame(() => scanLoop(detector, video, field));
+}
+
+async function fillPaymentFields(field, consumerNumber) {
+  setInputValue(field.input, consumerNumber);
+
+  const defaultMobileNumber = await getDefaultMobileNumber();
+  if (!defaultMobileNumber) {
+    return;
   }
 
-  async function handleBillScanClick(field, billType) {
-    if (activeScan) {
-      return;
-    }
+  const mobileInput = findMobileInput(field);
+  if (mobileInput) {
+    setInputValue(mobileInput, defaultMobileNumber);
+  } else {
+    showToast("Consumer number filled, but the mobile number field was not found.", "error");
+  }
+}
 
-    const license = await requestLicenseValidation();
-    if (!license.valid) {
-      showToast(license.reason || "License is not valid.", "error");
-      return;
-    }
+async function getDefaultMobileNumber() {
+  const settings = await chrome.storage.sync.get(DEFAULT_MOBILE_STORAGE_KEY);
+  return String(settings[DEFAULT_MOBILE_STORAGE_KEY] || "").trim();
+}
 
-    startScanner(field, billType);
+function findMobileInput(field) {
+  if (field.mode === "bulk") {
+    return findBulkMobileInput(field.index);
   }
 
-  function requestLicenseValidation() {
-    return chrome.runtime.sendMessage({ type: "VALIDATE_LICENSE" });
-  }
+  return findSingleMobileInput();
+}
 
-  async function startFirstScan(billType) {
-    const field = getFirstAvailableField();
-    if (!field) {
-      showToast("No consumer number fields were found on this page.", "error");
-      return { started: false, reason: "No consumer number fields were found on this page." };
-    }
+function findBulkMobileInput(index) {
+  const exactCandidates = [
+    `#txtDepositorMobile${index}`,
+    `#txtDepositMobile${index}`,
+    `#txtMobile${index}`,
+    `#txtdepositorMobile${index}`,
+    `#txtdepositorMobileNumber${index}`,
+    `#txtdepositorNumber${index}`
+  ];
 
-    await handleBillScanClick(field, billType);
-    return { started: true };
-  }
-
-  function getFirstAvailableField() {
-    const fields = findConsumerFields();
-    fields.forEach((field) => injectScanControls(field));
-    return fields.find((field) => !String(field.input.value || "").trim()) || fields[0] || null;
-  }
-
-  function startScanner(field, billType) {
-    const input = document.getElementById(field.input.id);
-    if (!input) {
-      showToast("Consumer number field was not found.", "error");
-      return;
-    }
-
-    stopScanner(false);
-    activeScan = true;
-
-    const overlay = buildScannerOverlay(field, billType);
-    scanState = {
-      billType,
-      buffer: "",
-      field: { ...field, input },
-      overlay: overlay.container,
-      timerId: null
-    };
-
-    document.body.appendChild(overlay.container);
-    input.focus();
-    input.select?.();
-    document.addEventListener("keydown", handleScannerKeydown, true);
-    showToast(`${BILL_TYPES[billType].buttonText} scanner is ready. Scan the barcode now.`, "info");
-  }
-
-  function handleScannerKeydown(event) {
-    if (!scanState) {
-      return;
-    }
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-      stopScanner(true);
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === "Tab") {
-      event.preventDefault();
-      commitScannerBuffer();
-      return;
-    }
-
-    if (event.key === "Backspace" || event.key === "Delete") {
-      event.preventDefault();
-      scanState.buffer = "";
-      scheduleScannerCommit();
-      return;
-    }
-
-    if (event.key?.length === 1) {
-      event.preventDefault();
-      scanState.buffer += event.key;
-      scheduleScannerCommit();
+  for (const selector of exactCandidates) {
+    const input = document.querySelector(selector);
+    if (input) {
+      return input;
     }
   }
 
-  function scheduleScannerCommit() {
-    window.clearTimeout(scanState?.timerId);
-    if (!scanState) {
-      return;
-    }
-
-    scanState.timerId = window.setTimeout(commitScannerBuffer, SCAN_IDLE_COMMIT_MS);
+  const wrapperCandidate = document.querySelector(`#divdepono${index}, #divdepositormobilenumber${index}`);
+  const wrapperInput = wrapperCandidate?.querySelector('input[type="text"], input[type="tel"], input:not([type])');
+  if (wrapperInput) {
+    return wrapperInput;
   }
 
-  async function commitScannerBuffer() {
-    if (!scanState) {
-      return;
-    }
+  return findInputByLabelText(new RegExp(`Depositor\\s+Mobile\\s+Number\\s+${index}\\b`, "i"));
+}
 
-    const state = scanState;
-    window.clearTimeout(state.timerId);
-    const consumerNumber = extractConsumerNumber(state.buffer, state.billType);
+function findSingleMobileInput() {
+  const exactCandidates = [
+    "#txtdepositormobilenumber",
+    "#txtDepositorMobileNumber",
+    "#txtDepositorMobile",
+    "#txtdepositorMobile",
+    "#txtMobileNumber",
+    "#txtmobilenumber"
+  ];
 
-    if (!consumerNumber) {
-      stopScanner(false);
-      showToast(`Scanned barcode did not match the ${BILL_TYPES[state.billType].buttonText} format. Click the correct button and scan again.`, "error");
-      return;
-    }
-
-    await fillPaymentFields(state.field, consumerNumber);
-    stopScanner(false);
-    showToast(BILL_TYPES[state.billType].successText, "success");
-  }
-
-  function stopScanner(showCancelledToast) {
-    if (!scanState) {
-      return;
-    }
-
-    window.clearTimeout(scanState.timerId);
-    document.removeEventListener("keydown", handleScannerKeydown, true);
-    scanState.overlay?.remove();
-    scanState = null;
-    activeScan = false;
-
-    if (showCancelledToast) {
-      showToast("Barcode scanner mode cancelled.", "info");
+  for (const selector of exactCandidates) {
+    const input = document.querySelector(selector);
+    if (input) {
+      return input;
     }
   }
 
-  function buildScannerOverlay(field, billType) {
-    const config = BILL_TYPES[billType];
-    const container = document.createElement("div");
-    container.id = SCANNER_CONTAINER_ID;
-    container.className = "konnect-qr-overlay";
-
-    const panel = document.createElement("div");
-    panel.className = "konnect-qr-panel konnect-usb-panel";
-
-    const title = document.createElement("h3");
-    const rowText = field.mode === "bulk" ? ` for row ${field.index}` : "";
-    title.textContent = `${config.overlayTitle}${rowText}`;
-
-    const help = document.createElement("p");
-    help.textContent = config.helpText;
-
-    const target = document.createElement("p");
-    target.className = "konnect-usb-target";
-    target.textContent = `Target field: ${field.input.id || "Consumer No"}`;
-
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "konnect-qr-cancel";
-    cancel.textContent = "Cancel";
-    cancel.addEventListener("click", () => stopScanner(true));
-
-    panel.append(title, help, target, cancel);
-    container.appendChild(panel);
-
-    return { container };
+  const wrapperCandidate = document.querySelector("#divdepono, #divdepositormobilenumber");
+  const wrapperInput = wrapperCandidate?.querySelector('input[type="text"], input[type="tel"], input:not([type])');
+  if (wrapperInput) {
+    return wrapperInput;
   }
 
-  async function fillPaymentFields(field, consumerNumber) {
-    setInputValue(field.input, consumerNumber);
+  return findInputByLabelText(/Depositor\s+Mobile\s+Number/i);
+}
 
-    const defaultMobileNumber = await getDefaultMobileNumber();
-    if (!defaultMobileNumber) {
-      return;
-    }
-
-    const mobileInput = findMobileInput(field);
-    if (mobileInput) {
-      setInputValue(mobileInput, defaultMobileNumber);
-    } else {
-      showToast("Consumer number filled, but the mobile number field was not found.", "error");
-    }
+function findInputByLabelText(pattern) {
+  const labels = Array.from(document.querySelectorAll("label"));
+  const label = labels.find((candidate) => pattern.test(candidate.textContent || ""));
+  if (!label) {
+    return null;
   }
 
-  async function getDefaultMobileNumber() {
-    const settings = await chrome.storage.sync.get(DEFAULT_MOBILE_STORAGE_KEY);
-    return String(settings[DEFAULT_MOBILE_STORAGE_KEY] || "").trim();
+  const forInput = label.htmlFor ? document.getElementById(label.htmlFor) : null;
+  if (forInput) {
+    return forInput;
   }
 
-  function findMobileInput(field) {
-    if (field.mode === "bulk") {
-      return findBulkMobileInput(field.index);
-    }
-
-    return findSingleMobileInput();
+  const parentInput = label.parentElement?.querySelector('input[type="text"], input[type="tel"], input:not([type])');
+  if (parentInput) {
+    return parentInput;
   }
 
-  function findBulkMobileInput(index) {
-    const exactCandidates = [
-      `#txtDepositorMobile${index}`,
-      `#txtDepositMobile${index}`,
-      `#txtMobile${index}`,
-      `#txtdepositorMobile${index}`,
-      `#txtdepositorMobileNumber${index}`,
-      `#txtdepositorNumber${index}`
-    ];
+  const nextContainerInput = label.parentElement?.nextElementSibling?.querySelector?.('input[type="text"], input[type="tel"], input:not([type])');
+  return nextContainerInput || null;
+}
 
-    for (const selector of exactCandidates) {
-      const input = document.querySelector(selector);
-      if (input) {
-        return input;
-      }
-    }
+function extractConsumerNumber(rawValue) {
+  const digits = String(rawValue).match(/\d{8,20}/g) || [];
+  const preferred = digits.find((value) => value.length === 14) || digits[0];
+  return preferred || "";
+}
 
-    const wrapperCandidate = document.querySelector(`#divdepono${index}, #divdepositormobilenumber${index}`);
-    const wrapperInput = wrapperCandidate?.querySelector('input[type="text"], input[type="tel"], input:not([type])');
-    if (wrapperInput) {
-      return wrapperInput;
-    }
+function setInputValue(input, value) {
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+  nativeSetter.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  input.focus();
+}
 
-    return findInputByLabelText(new RegExp(`Depositor\\s+Mobile\\s+Number\\s+${index}\\b`, "i"));
+function stopScanner(container) {
+  activeScan = false;
+  if (mediaStream) {
+    mediaStream.getTracks().forEach((track) => track.stop());
+    mediaStream = null;
   }
+  container?.remove();
+}
 
-  function findSingleMobileInput() {
-    const exactCandidates = [
-      "#txtdepositormobilenumber",
-      "#txtDepositorMobileNumber",
-      "#txtDepositorMobile",
-      "#txtdepositorMobile",
-      "#txtMobileNumber",
-      "#txtmobilenumber"
-    ];
+function showToast(message, type = "info") {
+  const toast = document.createElement("div");
+  toast.className = `konnect-qr-toast konnect-qr-toast-${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 4500);
+}
 
-    for (const selector of exactCandidates) {
-      const input = document.querySelector(selector);
-      if (input) {
-        return input;
-      }
-    }
-
-    const wrapperCandidate = document.querySelector("#divdepono, #divdepositormobilenumber");
-    const wrapperInput = wrapperCandidate?.querySelector('input[type="text"], input[type="tel"], input:not([type])');
-    if (wrapperInput) {
-      return wrapperInput;
-    }
-
-    return findInputByLabelText(/Depositor\s+Mobile\s+Number/i);
-  }
-
-  function findInputByLabelText(pattern) {
-    const labels = Array.from(document.querySelectorAll("label"));
-    const label = labels.find((candidate) => pattern.test(candidate.textContent || ""));
-    if (!label) {
-      return null;
-    }
-
-    const forInput = label.htmlFor ? document.getElementById(label.htmlFor) : null;
-    if (forInput) {
-      return forInput;
-    }
-
-    const parentInput = label.parentElement?.querySelector('input[type="text"], input[type="tel"], input:not([type])');
-    if (parentInput) {
-      return parentInput;
-    }
-
-    const nextContainerInput = label.parentElement?.nextElementSibling?.querySelector?.('input[type="text"], input[type="tel"], input:not([type])');
-    return nextContainerInput || null;
-  }
-
-  function extractConsumerNumber(rawValue, billType) {
-    if (billType === "electricity") {
-      return extractElectricityConsumerNumber(rawValue);
-    }
-
-    if (billType === "gas") {
-      return extractGasConsumerNumber(rawValue);
-    }
-
-    return "";
-  }
-
-  function extractElectricityConsumerNumber(rawValue) {
-    const value = String(rawValue || "").trim();
-    const firstLetterIndex = value.search(/[A-Za-z]/);
-    if (firstLetterIndex === -1) {
-      return "";
-    }
-
-    const digitsAfterLetter = value.slice(firstLetterIndex + 1).replace(/\D/g, "");
-    return digitsAfterLetter.length >= 14 ? digitsAfterLetter.slice(0, 14) : "";
-  }
-
-  function extractGasConsumerNumber(rawValue) {
-    const digits = String(rawValue || "").replace(/\D/g, "");
-    if (digits.length < 15 || digits.slice(0, 4) !== "0300") {
-      return "";
-    }
-
-    return digits.slice(4, 15);
-  }
-
-  function setInputValue(input, value) {
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-    if (nativeSetter) {
-      nativeSetter.call(input, value);
-    } else {
-      input.value = value;
-    }
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    input.focus();
-  }
-
-  function showToast(message, type = "info") {
-    const toast = document.createElement("div");
-    toast.className = `konnect-qr-toast konnect-qr-toast-${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    window.setTimeout(() => toast.remove(), 4500);
-  }
-
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === "KONNECT_QR_PING") {
-      sendResponse({ ready: true, fields: findConsumerFields().length });
-      return false;
-    }
-
-    if (message?.type === "KONNECT_QR_INJECT_BUTTONS") {
-      sendResponse({ ready: true, fields: injectScanButtons() });
-      return false;
-    }
-
-    if (message?.type === "KONNECT_QR_START_FIRST_ELECTRICITY_SCAN") {
-      startFirstScan("electricity").then(sendResponse);
-      return true;
-    }
-
-    if (message?.type === "KONNECT_QR_START_FIRST_GAS_SCAN") {
-      startFirstScan("gas").then(sendResponse);
-      return true;
-    }
-
-    return false;
-  });
-
-  window[API_NAME] = { init, injectScanButtons, startFirstScan };
-  init();
-})();
+init();

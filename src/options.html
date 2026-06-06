@@ -2,30 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Konnect HBL Barcode Scanner Options</title>
+    <title>Konnect HBL QR Scanner Options</title>
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main>
-      <h1>Konnect HBL Barcode Scanner</h1>
-      <p>Configure the license key, default mobile number, and GitHub-hosted license JSON endpoint.</p>
-
-      <section class="device-card">
-        <h2>Device activation</h2>
-        <p>This extension is locked to this browser profile. Send this Device ID to the license administrator, then add it to the license entry's <code>allowedDeviceIds</code> list in GitHub.</p>
-        <label>
-          Device ID
-          <input id="deviceId" type="text" readonly />
-        </label>
-        <div class="button-row">
-          <button id="copyActivationRequest" type="button" class="secondary">Copy activation request</button>
-          <button id="openActivationRequest" type="button" class="secondary">Open GitHub request</button>
-        </div>
-      </section>
+      <h1>Konnect HBL QR Scanner</h1>
+      <p>Configure the license key and the GitHub-hosted license JSON endpoint.</p>
 
       <label>
         License key
-        <input id="licenseKey" type="text" placeholder="Customer license key" autocomplete="off" />
+        <input id="licenseKey" type="text" placeholder="KONNECT-DEMO-001" autocomplete="off" />
       </label>
 
       <label>

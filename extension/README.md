@@ -65,7 +65,7 @@ Example license entry:
 The extension validates licenses from `licenses/licenses.json`. After this repository is pushed to GitHub, use the raw file URL as the extension's **Remote license URL** in the options page:
 
 ```text
-https://raw.githubusercontent.com/<github-user-or-org>/konnect-hbl-chrome-extension/<branch>/licenses/licenses.json
+https://raw.githubusercontent.com/<github-user-or-org>/konnect-hbl-chrome-extension/<branch>/extension/licenses/licenses.json
 ```
 
 To revoke a customer, set that license entry's `enabled` field to `false`, remove the license entry, remove the Device ID from `allowedDeviceIds`, or set `expiresAt` to a past ISO date.
@@ -75,7 +75,7 @@ To revoke a customer, set that license entry's `enabled` field to `false`, remov
 1. Open Chrome and go to `chrome://extensions`.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
-4. Select this repository folder (`konnect-hbl-chrome-extension`).
+4. Select the `extension/` folder inside this repository.
 5. Open the extension **Details** page and then **Extension options**.
 6. Enter a license key, default depositor mobile number, and the raw GitHub license URL.
 7. Copy the Device ID from options and add it to `allowedDeviceIds` for that license in GitHub.
