@@ -1,26 +1,40 @@
 {
   "manifest_version": 3,
   "name": "Konnect HBL Consumer QR Scanner",
-  "description": "Injects a QR scanner beside the Konnect HBL consumer number field and validates usage through a remotely controlled GitHub license file.",
+  "description": "Injects Electricity and Gas barcode scanner buttons beside Konnect HBL consumer number fields and validates usage by license/device ID.",
   "version": "1.0.0",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
   "host_permissions": [
-    "https://konnecthbl.com/*",
+    "*://konnecthbl.com/*",
+    "*://*.konnecthbl.com/*",
     "https://raw.githubusercontent.com/*",
     "https://api.github.com/*"
   ],
+  "action": {
+    "default_title": "Konnect HBL QR Scanner",
+    "default_popup": "src/popup.html"
+  },
   "background": {
     "service_worker": "src/background.js"
   },
   "content_scripts": [
     {
       "matches": [
-        "https://konnecthbl.com/AGENT-PORTAL/Transactions/Billpayment*",
-        "https://konnecthbl.com/AGENT-PORTAL/Transactions/BulkBillpayment*"
+        "*://konnecthbl.com/*",
+        "*://*.konnecthbl.com/*"
       ],
-      "js": ["src/content.js"],
-      "css": ["src/styles.css"],
-      "run_at": "document_idle"
+      "js": [
+        "src/content.js"
+      ],
+      "css": [
+        "src/styles.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "options_page": "src/options.html"

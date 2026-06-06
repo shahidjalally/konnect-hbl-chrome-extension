@@ -47,3 +47,45 @@ button {
   color: #087f5b;
   font-weight: 700;
 }
+
+h2 {
+  margin: 0 0 8px;
+  color: #006f61;
+  font-size: 16px;
+}
+
+code {
+  font-family: Consolas, Monaco, monospace;
+}
+
+.device-card {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid #cce8e3;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.device-card p {
+  margin: 0 0 12px;
+  line-height: 1.4;
+}
+
+input[readonly] {
+  background: #edf7f5;
+  color: #00584d;
+  font-family: Consolas, Monaco, monospace;
+  font-weight: 700;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button.secondary {
+  border: 1px solid #008b7a;
+  background: #ffffff;
+  color: #008b7a;
+}

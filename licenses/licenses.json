@@ -6,8 +6,13 @@
       "holder": "Demo License",
       "enabled": true,
       "expiresAt": "2027-06-06T23:59:59Z",
-      "allowedDomains": ["konnecthbl.com"],
-      "message": "Demo license is active. Disable or remove this entry in GitHub to revoke access."
+      "allowedDomains": [
+        "konnecthbl.com"
+      ],
+      "message": "Demo license is active only for approved device IDs. Add a browser Device ID to allowedDeviceIds in GitHub to activate.",
+      "allowedDeviceIds": [
+        "REPLACE-WITH-APPROVED-DEVICE-ID"
+      ]
     }
   ]
 }
