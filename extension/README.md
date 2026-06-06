@@ -1,6 +1,6 @@
 # Konnect HBL Consumer QR Scanner Chrome Extension
 
-This Chrome extension injects a **Scan QR Code** button beside the Konnect HBL OTC Bill Payment consumer number field found at:
+This conflict-isolated Chrome extension package injects a **Scan QR Code** button beside the Konnect HBL OTC Bill Payment consumer number field found at:
 
 ```text
 https://konnecthbl.com/AGENT-PORTAL/Transactions/Billpayment
@@ -39,7 +39,7 @@ The bulk payment page is also supported. Bulk consumer fields are detected by ID
 The extension validates licenses from `licenses/licenses.json`. After this repository is pushed to GitHub, use the raw file URL as the extension's **Remote license URL** in the options page:
 
 ```text
-https://raw.githubusercontent.com/<github-user-or-org>/konnect-hbl-chrome-extension/<branch>/licenses/licenses.json
+https://raw.githubusercontent.com/<github-user-or-org>/konnect-hbl-chrome-extension/<branch>/extension/licenses/licenses.json
 ```
 
 To revoke a customer, set that license entry's `enabled` field to `false` or remove the license entry and commit the file. To expire a customer, set `expiresAt` to a past ISO date.
@@ -62,7 +62,7 @@ Example license entry:
 1. Open Chrome and go to `chrome://extensions`.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
-4. Select this repository folder.
+4. Select the `extension/` folder inside this repository.
 5. Open the extension **Details** page and then **Extension options**.
 6. Enter a license key, default depositor mobile number, and the raw GitHub license URL.
 7. If a bill payment page was already open, reload it or click the extension toolbar icon and press **Inject scan controls**.
@@ -73,3 +73,7 @@ Example license entry:
 Camera scanning uses Chrome's native `BarcodeDetector` API for QR code detection. If an older Chrome build does not support QR code detection, the extension will show an error asking the user to update Chrome.
 
 USB scanner mode supports plug-and-play scanners that behave like a keyboard, also called keyboard-wedge mode. Configure the scanner to send the QR payload followed by Enter or Tab for the fastest completion; the extension also commits a scan after a short idle pause.
+
+## Repository layout
+
+The installable extension is intentionally kept under the `extension/` directory. This keeps the package isolated from root-level repository files and reduces merge conflicts when the GitHub repository is also used for license administration or documentation.
