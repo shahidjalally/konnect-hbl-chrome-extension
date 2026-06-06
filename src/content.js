@@ -17,17 +17,17 @@
   const SCAN_IDLE_COMMIT_MS = 250;
   const BILL_TYPES = {
     electricity: {
-      buttonText: "Electricity",
-      title: "Scan an electricity/WAPDA barcode with a plug-and-play USB scanner",
-      overlayTitle: "Scan Electricity Barcode",
-      helpText: "Use the USB scanner to scan the electricity/WAPDA barcode. The extension extracts the 14 digits after the first alphabet character.",
+      buttonText: "Electricity Bill",
+      title: "Scan an electricity/WAPDA bill barcode with a plug-and-play USB scanner",
+      overlayTitle: "Scan Electricity Bill Barcode",
+      helpText: "Use the USB scanner to scan the electricity/WAPDA bill barcode. The extension skips the first character and extracts the next 14 digits.",
       successText: "Electricity consumer number filled successfully."
     },
     gas: {
       buttonText: "Gas Bill",
       title: "Scan a gas/SNGPL barcode with a plug-and-play USB scanner",
       overlayTitle: "Scan Gas Bill Barcode",
-      helpText: "Use the USB scanner to scan the gas barcode. The extension skips the 0300 biller prefix and extracts the next 11 digits.",
+      helpText: "Use the USB scanner to scan the gas barcode. The extension skips the first 4 digits and extracts the next 11 digits.",
       successText: "Gas consumer number filled successfully."
     }
   };
@@ -145,6 +145,8 @@
       return 0;
     }
 
+    removeStaleControlsNearInput(input, wrapper);
+
     const buttonGroups = Array.from(wrapper.querySelectorAll(`.${FIELD_BUTTONS_CLASS}`));
     let currentButtonCount = 0;
 
@@ -152,7 +154,9 @@
       const billButtons = buttons.querySelectorAll(`.${BUTTON_CLASS}`).length;
       const hasOldCameraButton = Boolean(buttons.querySelector(".konnect-camera-scan-button"));
       const hasOldUsbButton = Boolean(buttons.querySelector(".konnect-usb-scan-button"));
-      if (index > 0 || hasOldCameraButton || hasOldUsbButton || billButtons !== 2) {
+      const buttonLabels = Array.from(buttons.querySelectorAll(`.${BUTTON_CLASS}`), (button) => button.textContent.trim());
+      const hasCurrentLabels = buttonLabels.includes(BILL_TYPES.electricity.buttonText) && buttonLabels.includes(BILL_TYPES.gas.buttonText);
+      if (index > 0 || hasOldCameraButton || hasOldUsbButton || billButtons !== 2 || !hasCurrentLabels) {
         buttons.remove();
         return;
       }
@@ -161,6 +165,37 @@
     });
 
     return currentButtonCount;
+  }
+
+  function removeStaleControlsNearInput(input, wrapper) {
+    const parent = wrapper.parentElement || input.parentElement;
+    if (!parent) {
+      return;
+    }
+
+    Array.from(parent.children).forEach((child) => {
+      if (child === wrapper || child.contains(wrapper) || child.classList?.contains(FIELD_WRAPPER_CLASS)) {
+        return;
+      }
+
+      if (isScanControlElement(child)) {
+        child.remove();
+        return;
+      }
+
+      child.querySelectorAll?.(
+        `.${FIELD_BUTTONS_CLASS}, .konnect-camera-scan-button, .konnect-usb-scan-button, .${BUTTON_CLASS}`
+      ).forEach((control) => control.remove());
+    });
+  }
+
+  function isScanControlElement(element) {
+    return Boolean(
+      element.classList?.contains(FIELD_BUTTONS_CLASS) ||
+      element.classList?.contains(BUTTON_CLASS) ||
+      element.classList?.contains("konnect-camera-scan-button") ||
+      element.classList?.contains("konnect-usb-scan-button")
+    );
   }
 
   function buildBillButton(type, field) {
@@ -360,8 +395,20 @@
   }
 
   async function getDefaultMobileNumber() {
-    const settings = await chrome.storage.sync.get(DEFAULT_MOBILE_STORAGE_KEY);
-    return String(settings[DEFAULT_MOBILE_STORAGE_KEY] || "").trim();
+    const syncSettings = await chrome.storage.sync.get(DEFAULT_MOBILE_STORAGE_KEY);
+    const syncMobileNumber = String(syncSettings[DEFAULT_MOBILE_STORAGE_KEY] || "").trim();
+    if (syncMobileNumber) {
+      return syncMobileNumber;
+    }
+
+    const localSettings = await chrome.storage.local.get(DEFAULT_MOBILE_STORAGE_KEY);
+    const localMobileNumber = String(localSettings[DEFAULT_MOBILE_STORAGE_KEY] || "").trim();
+    if (localMobileNumber) {
+      return localMobileNumber;
+    }
+
+    const response = await chrome.runtime.sendMessage({ type: "GET_DEFAULT_MOBILE_NUMBER" });
+    return String(response?.defaultMobileNumber || "").trim();
   }
 
   function findMobileInput(field) {
@@ -374,6 +421,7 @@
 
   function findBulkMobileInput(index) {
     const exactCandidates = [
+      `#txtdepositorno${index}`,
       `#txtDepositorMobile${index}`,
       `#txtDepositMobile${index}`,
       `#txtMobile${index}`,
@@ -400,6 +448,7 @@
 
   function findSingleMobileInput() {
     const exactCandidates = [
+      "#txtdepositorno",
       "#txtdepositormobilenumber",
       "#txtDepositorMobileNumber",
       "#txtDepositorMobile",
@@ -458,23 +507,19 @@
   }
 
   function extractElectricityConsumerNumber(rawValue) {
-    const value = String(rawValue || "").trim();
-    const firstLetterIndex = value.search(/[A-Za-z]/);
-    if (firstLetterIndex === -1) {
-      return "";
-    }
-
-    const digitsAfterLetter = value.slice(firstLetterIndex + 1).replace(/\D/g, "");
-    return digitsAfterLetter.length >= 14 ? digitsAfterLetter.slice(0, 14) : "";
+    const value = normalizeBarcodeValue(rawValue);
+    const consumerNumber = value.slice(1, 15);
+    return /^\d{14}$/.test(consumerNumber) ? consumerNumber : "";
   }
 
   function extractGasConsumerNumber(rawValue) {
     const digits = String(rawValue || "").replace(/\D/g, "");
-    if (digits.length < 15 || digits.slice(0, 4) !== "0300") {
-      return "";
-    }
+    const consumerNumber = digits.slice(4, 15);
+    return /^\d{11}$/.test(consumerNumber) ? consumerNumber : "";
+  }
 
-    return digits.slice(4, 15);
+  function normalizeBarcodeValue(rawValue) {
+    return String(rawValue || "").trim().replace(/\s/g, "");
   }
 
   function setInputValue(input, value) {

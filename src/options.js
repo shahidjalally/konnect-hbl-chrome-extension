@@ -13,25 +13,31 @@ copyActivationRequestButton.addEventListener("click", copyActivationRequest);
 openActivationRequestButton.addEventListener("click", openActivationRequest);
 
 async function loadSettings() {
-  const [settings, device] = await Promise.all([
+  const [settings, localSettings, device] = await Promise.all([
     chrome.storage.sync.get(["licenseKey", "licenseEndpoint", "defaultMobileNumber"]),
+    chrome.storage.local.get("defaultMobileNumber"),
     chrome.runtime.sendMessage({ type: "GET_DEVICE_ID" })
   ]);
 
   licenseKeyInput.value = settings.licenseKey || "";
   licenseEndpointInput.value = settings.licenseEndpoint || DEFAULT_LICENSE_ENDPOINT;
-  defaultMobileNumberInput.value = settings.defaultMobileNumber || "";
+  defaultMobileNumberInput.value = settings.defaultMobileNumber || localSettings.defaultMobileNumber || "";
   deviceIdInput.value = device.deviceId || "";
 }
 
 async function saveSettings() {
-  await chrome.storage.sync.set({
-    licenseKey: licenseKeyInput.value.trim(),
-    defaultMobileNumber: defaultMobileNumberInput.value.trim(),
-    licenseEndpoint: licenseEndpointInput.value.trim() || DEFAULT_LICENSE_ENDPOINT,
-    cachedLicense: null,
-    cachedLicenseValidatedAt: 0
-  });
+  const defaultMobileNumber = defaultMobileNumberInput.value.trim();
+
+  await Promise.all([
+    chrome.storage.sync.set({
+      licenseKey: licenseKeyInput.value.trim(),
+      defaultMobileNumber,
+      licenseEndpoint: licenseEndpointInput.value.trim() || DEFAULT_LICENSE_ENDPOINT,
+      cachedLicense: null,
+      cachedLicenseValidatedAt: 0
+    }),
+    chrome.storage.local.set({ defaultMobileNumber })
+  ]);
 
   showStatus("Settings saved.");
 }
