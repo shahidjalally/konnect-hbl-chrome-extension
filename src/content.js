@@ -35,14 +35,27 @@
   let activeScan = false;
   let observer;
   let scanState = null;
+  let injectionScheduled = false;
 
   function init() {
     injectScanButtons();
 
     if (!observer) {
-      observer = new MutationObserver(() => injectScanButtons());
+      observer = new MutationObserver(scheduleInjectScanButtons);
       observer.observe(document.documentElement, { childList: true, subtree: true });
     }
+  }
+
+  function scheduleInjectScanButtons() {
+    if (injectionScheduled) {
+      return;
+    }
+
+    injectionScheduled = true;
+    window.setTimeout(() => {
+      injectionScheduled = false;
+      injectScanButtons();
+    }, 50);
   }
 
   function injectScanButtons() {
@@ -169,7 +182,7 @@
     }
 
     Array.from(parent.children).forEach((child) => {
-      if (child === wrapper || child.contains(input)) {
+      if (child === wrapper || child.contains(input) || isActiveFieldWrapper(child)) {
         return;
       }
 
@@ -180,12 +193,23 @@
 
       child.querySelectorAll?.(
         `.${FIELD_BUTTONS_CLASS}, .konnect-camera-scan-button, .konnect-usb-scan-button, .${BUTTON_CLASS}`
-      ).forEach((control) => control.remove());
+      ).forEach((control) => {
+        if (!control.closest(`.${FIELD_WRAPPER_CLASS}`)) {
+          control.remove();
+        }
+      });
 
       if (child.classList?.contains(FIELD_WRAPPER_CLASS) && !child.querySelector("input") && !child.textContent.trim()) {
         child.remove();
       }
     });
+  }
+
+  function isActiveFieldWrapper(element) {
+    return Boolean(
+      element.classList?.contains(FIELD_WRAPPER_CLASS) &&
+      element.querySelector('input[data-konnect-qr-injected="true"]')
+    );
   }
 
   function isCurrentBillButtonGroup(buttons) {
