@@ -1,0 +1,48 @@
+body {
+  min-width: 280px;
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #222222;
+  background: #ffffff;
+}
+
+main {
+  padding: 14px;
+}
+
+h1 {
+  margin: 0 0 10px;
+  color: #008b7a;
+  font-size: 16px;
+}
+
+#status {
+  min-height: 36px;
+  margin: 0 0 12px;
+  color: #444444;
+  line-height: 1.35;
+}
+
+button {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: #008b7a;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:hover,
+button:focus {
+  background: #006f61;
+}
+
+button.secondary {
+  border: 1px solid #008b7a;
+  background: #ffffff;
+  color: #008b7a;
+}
