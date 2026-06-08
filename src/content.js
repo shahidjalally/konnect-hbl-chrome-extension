@@ -14,7 +14,7 @@
   const FIELD_WRAPPER_CLASS = "konnect-qr-field-wrapper";
   const FIELD_BUTTONS_CLASS = "konnect-qr-field-buttons";
   const DEFAULT_MOBILE_STORAGE_KEY = "defaultMobileNumber";
-  const SCAN_IDLE_COMMIT_MS = 250;
+  const SCAN_IDLE_COMMIT_MS = 750;
   const BILL_TYPES = {
     electricity: {
       buttonText: "Electricity Bill",
@@ -42,7 +42,12 @@
 
     if (!observer) {
       observer = new MutationObserver(scheduleInjectScanButtons);
-      observer.observe(document.documentElement, { childList: true, subtree: true });
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "style", "hidden", "disabled"]
+      });
     }
   }
 
@@ -67,28 +72,50 @@
   function findConsumerFields() {
     const fields = [];
     const seen = new Set();
+    const seenKeys = new Set();
 
     for (const input of findSingleConsumerInputs()) {
-      addConsumerField(fields, seen, { input, mode: "single" });
+      addConsumerField(fields, seen, seenKeys, { input, mode: "single" });
     }
 
     document.querySelectorAll("input[id]").forEach((input) => {
       const match = input.id.match(BULK_CONSUMER_ID_PATTERN);
       if (match) {
-        addConsumerField(fields, seen, { input, mode: "bulk", index: match[1] });
+        addConsumerField(fields, seen, seenKeys, { input, mode: "bulk", index: match[1] });
       }
     });
 
     return fields;
   }
 
-  function addConsumerField(fields, seen, field) {
-    if (!field.input || seen.has(field.input)) {
+  function addConsumerField(fields, seen, seenKeys, field) {
+    if (!field.input || seen.has(field.input) || !isVisibleConsumerInput(field.input)) {
+      return;
+    }
+
+    const fieldKey = getInputControlKey(field.input);
+    if (fieldKey && seenKeys.has(fieldKey)) {
       return;
     }
 
     seen.add(field.input);
+    if (fieldKey) {
+      seenKeys.add(fieldKey);
+    }
     fields.push(field);
+  }
+
+  function isVisibleConsumerInput(input) {
+    if (input.type === "hidden" || input.disabled) {
+      return false;
+    }
+
+    const style = window.getComputedStyle(input);
+    if (style.display === "none" || style.visibility === "hidden") {
+      return false;
+    }
+
+    return Boolean(input.offsetParent || input.getClientRects().length);
   }
 
   function findSingleConsumerInputs() {
@@ -148,6 +175,10 @@
     const gasButton = buildBillButton("gas", field);
     const buttons = document.createElement("div");
     buttons.className = FIELD_BUTTONS_CLASS;
+    const targetKey = getInputControlKey(field.input);
+    if (targetKey) {
+      buttons.dataset.konnectTargetKey = targetKey;
+    }
     buttons.append(electricityButton, gasButton);
     return buttons;
   }
@@ -158,6 +189,7 @@
       return 0;
     }
 
+    removeDuplicateControlsForInput(input, wrapper);
     removeStaleControlsNearInput(input, wrapper);
 
     const buttonGroups = Array.from(wrapper.querySelectorAll(`.${FIELD_BUTTONS_CLASS}`));
@@ -173,6 +205,27 @@
     });
 
     return keptButtons ? keptButtons.querySelectorAll(`.${BUTTON_CLASS}`).length : 0;
+  }
+
+  function removeDuplicateControlsForInput(input, wrapper) {
+    const targetKey = getInputControlKey(input);
+    const parent = wrapper.parentElement || input.parentElement;
+    if (!parent || !targetKey) {
+      return;
+    }
+
+    const matchingGroups = Array.from(parent.querySelectorAll(`.${FIELD_BUTTONS_CLASS}`)).filter(
+      (buttons) => buttons.dataset.konnectTargetKey === targetKey
+    );
+    matchingGroups.forEach((buttons) => {
+      if (!wrapper.contains(buttons)) {
+        buttons.remove();
+      }
+    });
+  }
+
+  function getInputControlKey(input) {
+    return input.id || input.name || "";
   }
 
   function removeStaleControlsNearInput(input, wrapper) {
@@ -541,22 +594,19 @@
 
   function extractElectricityConsumerNumber(rawValue) {
     const value = normalizeBarcodeValue(rawValue);
-    const alphabetIndex = value.search(/[A-Za-z]/);
-    const candidate = alphabetIndex >= 0 ? value.slice(alphabetIndex + 1) : value;
-    const consumerNumber = candidate.replace(/\D/g, "").slice(0, 14);
+    const wapdaMatch = value.match(/[A-Za-z](\d{14})/);
+    if (wapdaMatch) {
+      return wapdaMatch[1];
+    }
 
-    return /^\d{14}$/.test(consumerNumber) ? consumerNumber : "";
+    const digits = value.replace(/\D/g, "");
+    return /^\d{14,}$/.test(digits) ? digits.slice(0, 14) : "";
   }
 
   function extractGasConsumerNumber(rawValue) {
     const digits = String(rawValue || "").replace(/\D/g, "");
-    const prefixIndex = digits.indexOf("0300");
-    if (prefixIndex < 0) {
-      return "";
-    }
-
-    const consumerNumber = digits.slice(prefixIndex + 4, prefixIndex + 15);
-    return /^\d{11}$/.test(consumerNumber) ? consumerNumber : "";
+    const gasMatch = digits.match(/^0300(\d{11})/);
+    return gasMatch ? gasMatch[1] : "";
   }
 
   function normalizeBarcodeValue(rawValue) {
