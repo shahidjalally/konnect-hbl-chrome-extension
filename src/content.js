@@ -14,7 +14,7 @@
   const FIELD_WRAPPER_CLASS = "konnect-qr-field-wrapper";
   const FIELD_BUTTONS_CLASS = "konnect-qr-field-buttons";
   const DEFAULT_MOBILE_STORAGE_KEY = "defaultMobileNumber";
-  const SCAN_IDLE_COMMIT_MS = 250;
+  const SCAN_IDLE_COMMIT_MS = 750;
   const BILL_TYPES = {
     electricity: {
       buttonText: "Electricity Bill",
@@ -42,7 +42,12 @@
 
     if (!observer) {
       observer = new MutationObserver(scheduleInjectScanButtons);
-      observer.observe(document.documentElement, { childList: true, subtree: true });
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "style", "hidden", "disabled"]
+      });
     }
   }
 
@@ -67,28 +72,50 @@
   function findConsumerFields() {
     const fields = [];
     const seen = new Set();
+    const seenKeys = new Set();
 
     for (const input of findSingleConsumerInputs()) {
-      addConsumerField(fields, seen, { input, mode: "single" });
+      addConsumerField(fields, seen, seenKeys, { input, mode: "single" });
     }
 
     document.querySelectorAll("input[id]").forEach((input) => {
       const match = input.id.match(BULK_CONSUMER_ID_PATTERN);
       if (match) {
-        addConsumerField(fields, seen, { input, mode: "bulk", index: match[1] });
+        addConsumerField(fields, seen, seenKeys, { input, mode: "bulk", index: match[1] });
       }
     });
 
     return fields;
   }
 
-  function addConsumerField(fields, seen, field) {
-    if (!field.input || seen.has(field.input)) {
+  function addConsumerField(fields, seen, seenKeys, field) {
+    if (!field.input || seen.has(field.input) || !isVisibleConsumerInput(field.input)) {
+      return;
+    }
+
+    const fieldKey = getInputControlKey(field.input);
+    if (fieldKey && seenKeys.has(fieldKey)) {
       return;
     }
 
     seen.add(field.input);
+    if (fieldKey) {
+      seenKeys.add(fieldKey);
+    }
     fields.push(field);
+  }
+
+  function isVisibleConsumerInput(input) {
+    if (input.type === "hidden" || input.disabled) {
+      return false;
+    }
+
+    const style = window.getComputedStyle(input);
+    if (style.display === "none" || style.visibility === "hidden") {
+      return false;
+    }
+
+    return Boolean(input.offsetParent || input.getClientRects().length);
   }
 
   function findSingleConsumerInputs() {
@@ -148,6 +175,10 @@
     const gasButton = buildBillButton("gas", field);
     const buttons = document.createElement("div");
     buttons.className = FIELD_BUTTONS_CLASS;
+    const targetKey = getInputControlKey(field.input);
+    if (targetKey) {
+      buttons.dataset.konnectTargetKey = targetKey;
+    }
     buttons.append(electricityButton, gasButton);
     return buttons;
   }
@@ -158,6 +189,7 @@
       return 0;
     }
 
+    removeDuplicateControlsForInput(input, wrapper);
     removeStaleControlsNearInput(input, wrapper);
 
     const buttonGroups = Array.from(wrapper.querySelectorAll(`.${FIELD_BUTTONS_CLASS}`));
@@ -173,6 +205,27 @@
     });
 
     return keptButtons ? keptButtons.querySelectorAll(`.${BUTTON_CLASS}`).length : 0;
+  }
+
+  function removeDuplicateControlsForInput(input, wrapper) {
+    const targetKey = getInputControlKey(input);
+    const parent = wrapper.parentElement || input.parentElement;
+    if (!parent || !targetKey) {
+      return;
+    }
+
+    const matchingGroups = Array.from(parent.querySelectorAll(`.${FIELD_BUTTONS_CLASS}`)).filter(
+      (buttons) => buttons.dataset.konnectTargetKey === targetKey
+    );
+    matchingGroups.forEach((buttons) => {
+      if (!wrapper.contains(buttons)) {
+        buttons.remove();
+      }
+    });
+  }
+
+  function getInputControlKey(input) {
+    return input.id || input.name || "";
   }
 
   function removeStaleControlsNearInput(input, wrapper) {
@@ -540,23 +593,87 @@
   }
 
   function extractElectricityConsumerNumber(rawValue) {
-    const value = normalizeBarcodeValue(rawValue);
-    const alphabetIndex = value.search(/[A-Za-z]/);
-    const candidate = alphabetIndex >= 0 ? value.slice(alphabetIndex + 1) : value;
-    const consumerNumber = candidate.replace(/\D/g, "").slice(0, 14);
-
-    return /^\d{14}$/.test(consumerNumber) ? consumerNumber : "";
+    let value = normalizeBarcodeValue(rawValue);
+  
+    // Convert ASCII decimal codes back to characters
+    // Pattern: 069 = E, 048-057 = 0-9
+    let converted = "";
+    let i = 0;
+    while (i < value.length) {
+      // Look for 3-digit ASCII codes
+      if (i + 3 <= value.length) {
+        const code = parseInt(value.substring(i, i + 3));
+        if (code === 69 || code === 70) { // E or F
+          converted += String.fromCharCode(code);
+          i += 3;
+          continue;
+        } else if (code >= 48 && code <= 57) { // 0-9 digits
+          converted += String.fromCharCode(code);
+          i += 3;
+          continue;
+        }
+      }
+      // If not 3-digit ASCII, take single character
+      converted += value[i];
+      i++;
+    }
+  
+    console.log("Converted barcode:", converted);
+  
+    // Now extract 14 digits after first alphabet
+    const match = converted.match(/[A-Za-z](\d{14})/);
+    if (match) {
+      return match[1];
+    }
+  
+    return "";
   }
 
   function extractGasConsumerNumber(rawValue) {
-    const digits = String(rawValue || "").replace(/\D/g, "");
-    const prefixIndex = digits.indexOf("0300");
-    if (prefixIndex < 0) {
+    // Convert ASCII decimal codes if present (like the electricity issue)
+    let value = String(rawValue || "").trim();
+  
+    // Check if it's in ASCII decimal format (all digits, no characters)
+    if (/^\d+$/.test(value) && value.length > 20 && !value.includes("0300")) {
+      let converted = "";
+      for (let i = 0; i < value.length; i += 3) {
+        const asciiCode = parseInt(value.substring(i, i + 3));
+        if (asciiCode >= 48 && asciiCode <= 57) { // 0-9
+          converted += String.fromCharCode(asciiCode);
+        } else {
+          converted = value;
+          break;
+        }
+      }
+      value = converted;
+    }
+  
+    // Remove any non-digit characters
+    const digits = value.replace(/\D/g, "");
+  
+    // Find 0300 prefix
+    const prefixMatch = digits.match(/0300(\d+)/);
+    if (!prefixMatch) {
       return "";
     }
-
-    const consumerNumber = digits.slice(prefixIndex + 4, prefixIndex + 15);
-    return /^\d{11}$/.test(consumerNumber) ? consumerNumber : "";
+  
+    // Get digits after 0300
+    const after0300 = prefixMatch[1];
+  
+    // Consumer ID is 11 digits, but there might be a leading zero
+    if (after0300.length >= 12) {
+      // Check if first digit is 0, then take next 11 digits
+      if (after0300[0] === '0') {
+        return after0300.substring(1, 12); // Skip the leading zero
+      }
+    }
+  
+    // If at least 11 digits available, return first 11
+    if (after0300.length >= 11) {
+      return after0300.substring(0, 11);
+    }
+  
+    return "";
   }
 
   function normalizeBarcodeValue(rawValue) {
