@@ -330,6 +330,42 @@
     return fields.find((field) => !String(field.input.value || "").trim()) || fields[0] || null;
   }
 
+  function getNextBulkConsumerField(currentField) {
+    if (currentField.mode !== "bulk") {
+      return null;
+    }
+
+    const currentIndex = Number.parseInt(currentField.index, 10);
+    if (!Number.isFinite(currentIndex)) {
+      return null;
+    }
+
+    const nextFields = findConsumerFields()
+      .filter((field) => field.mode === "bulk" && Number.parseInt(field.index, 10) > currentIndex)
+      .sort((first, second) => Number.parseInt(first.index, 10) - Number.parseInt(second.index, 10));
+
+    nextFields.forEach((field) => injectScanControls(field));
+
+    return nextFields.find((field) => !String(field.input.value || "").trim()) || nextFields[0] || null;
+  }
+
+  function continueBulkScan(nextField, billType) {
+    if (!nextField?.input) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      const input = document.getElementById(nextField.input.id);
+      if (!input || !isVisibleConsumerInput(input)) {
+        return;
+      }
+
+      input.focus();
+      input.select?.();
+      startScanner({ ...nextField, input }, billType);
+    }, 250);
+  }
+
   function startScanner(field, billType) {
     const input = document.getElementById(field.input.id);
     if (!input) {
@@ -412,8 +448,10 @@
     }
 
     await fillPaymentFields(state.field, consumerNumber);
+    const nextField = getNextBulkConsumerField(state.field);
     stopScanner(false);
     showToast(BILL_TYPES[state.billType].successText, "success");
+    continueBulkScan(nextField, state.billType);
   }
 
   function stopScanner(showCancelledToast) {
